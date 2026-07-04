@@ -1,8 +1,29 @@
 import Link from 'next/link'
 import { getCategories } from '@/lib/data'
 
+const CATEGORY_IMAGE_OVERRIDES: Record<string, string> = {
+  Sandalias: '/sandalias.png',
+  Vestidos: '/vestido.png',
+  Pantalones: '/pantalones.png',
+  Abrigos: '/abrigos.png',
+  'Sobres de Fiesta': '/sobredefiestas.png',
+}
+
+const CATEGORY_IMAGE_CLASSES: Record<string, string> = {
+  Botas: 'object-cover object-center',
+  Sandalias: 'object-contain object-center scale-[1.18] mix-blend-multiply',
+  Vestidos: 'object-contain object-top',
+  Pantalones: 'object-contain object-top mix-blend-multiply',
+  Abrigos: 'object-contain object-top mix-blend-multiply',
+  'Sobres de Fiesta': 'object-contain object-center mix-blend-multiply',
+}
+
 export async function CategoryGrid() {
-  const categories = await getCategories()
+  const categories = (await getCategories())
+    .map((category) => ({
+      ...category,
+      image: CATEGORY_IMAGE_OVERRIDES[category.name] ?? category.image,
+    }))
 
   return (
     <section id="categorias" className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
@@ -25,11 +46,11 @@ export async function CategoryGrid() {
             href={`/categoria/${category.slug}`}
             className="group flex flex-col overflow-hidden border border-border bg-card transition-shadow hover:shadow-md"
           >
-            <div className="aspect-square overflow-hidden bg-secondary">
+            <div className="isolate aspect-square overflow-hidden bg-secondary">
               <img
                 src={category.image || '/placeholder.svg'}
                 alt={`Calzado de la categoría ${category.name}`}
-                className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
+                className={`size-full transition-transform duration-500 group-hover:scale-105 ${CATEGORY_IMAGE_CLASSES[category.name] ?? 'object-cover object-center'}`}
               />
             </div>
             <span className="py-3 text-center text-xs font-semibold uppercase tracking-wide text-foreground">

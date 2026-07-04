@@ -7,6 +7,26 @@ import { ProductDetail } from '@/components/product-detail'
 import { formatPrice } from '@/lib/data'
 import { supabase } from '@/lib/supabase'
 
+function mapTallesToSizes(talles: unknown): string[] {
+  if (!Array.isArray(talles)) return []
+
+  const tallesCalzado = ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45'] as const
+  const tallesRopa = ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as const
+  const allowedTalles = [...tallesCalzado, ...tallesRopa] as const
+
+  const uniqueTalles = Array.from(
+    new Set(
+      talles
+        .map((talle) => String(talle).trim().toUpperCase())
+        .filter((talle) => allowedTalles.includes(talle as (typeof allowedTalles)[number])),
+    ),
+  )
+
+  return uniqueTalles.sort(
+    (a, b) => allowedTalles.indexOf(a as (typeof allowedTalles)[number]) - allowedTalles.indexOf(b as (typeof allowedTalles)[number]),
+  )
+}
+
 export async function generateStaticParams() {
   const { data: products, error } = await supabase.from('products').select('id')
   if (error || !products) return []
@@ -48,7 +68,7 @@ export async function generateMetadata({
     name: product.nombre,
     priceCard: product.precio_tarjeta,
     priceCash: product.precio_efectivo,
-    sizes: product.talles ?? [],
+    sizes: mapTallesToSizes(product.talles),
     image: imagenes[0] ?? '',
     gallery: imagenes,
     description: product.descripcion ?? '',
@@ -101,7 +121,7 @@ export default async function ProductPage({
     name: product.nombre,
     priceCard: product.precio_tarjeta,
     priceCash: product.precio_efectivo,
-    sizes: product.talles ?? [],
+    sizes: mapTallesToSizes(product.talles),
     image: imagenes[0] ?? '',
     gallery: imagenes,
     description: product.descripcion ?? '',

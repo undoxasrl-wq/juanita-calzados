@@ -21,25 +21,21 @@ export type Product = {
 }
 
 export const MAIN_CATEGORIES = [
-  "Zapatos",
-  "Botas",
-  "Sandalias",
-  "Zapatillas",
-  "Vestidos",
-  "Pantalones",
-  "Accesorios",
-  "Abrigos",
+  'Botas',
+  'Sandalias',
+  'Vestidos',
+  'Pantalones',
+  'Abrigos',
+  'Sobres de Fiesta',
 ] as const
 
 export const SUBCATEGORIES_BY_CATEGORY: Record<string, string[]> = {
-  Zapatos: ["Mocasines", "Stilettos", "Oxford", "Chatitas"],
-  Botas: ["Texanas", "Bucaneras", "Borcegos", "Western", "Flecos"],
-  Sandalias: ["Plataforma", "Chatitas", "Taco alto", "Taco bajo"],
-  Zapatillas: ["Urbanas", "Deportivas", "Casual"],
-  Vestidos: ["Cortos", "Largos", "Fiesta", "Casual"],
-  Pantalones: ["Jean", "Vestir", "Cargo", "Palazzo"],
-  Accesorios: ["Carteras", "Cintos", "Billeteras"],
-  Abrigos: ["Tapados", "Camperas", "Blazers", "Chalecos"],
+  Botas: ['Texanas', 'Bucaneras', 'Borcegos', 'Western', 'Flecos'],
+  Sandalias: ['Plataforma', 'Chatitas', 'Taco alto', 'Taco bajo'],
+  Vestidos: ['Cortos', 'Largos', 'Fiesta', 'Casual'],
+  Pantalones: ['Jean', 'Vestir', 'Cargo', 'Palazzo'],
+  Abrigos: ['Tapados', 'Camperas', 'Blazers', 'Chalecos'],
+  'Sobres de Fiesta': [],
 }
 
 const MAIN_CATEGORY_LOOKUP = new Map(
@@ -69,6 +65,11 @@ export const business = {
 
 const categoryImages: Record<string, string> = {
   botas: '/kalei-dos-en-uno.jpg',
+  sandalias: '/sandalias.png',
+  vestidos: '/vestido.png',
+  pantalones: '/pantalones.png',
+  abrigos: '/abrigos.png',
+  'sobres de fiesta': '/sobredefiestas.png',
   botinetas: '/bota-aura-chocolate.jpg',
   texanas: '/texana-cataleya.jpg',
   borcegos: '/jalei-chocolate.jpg',
@@ -89,6 +90,26 @@ function slugifyCategory(value: string) {
 
 function normalizeText(value: string) {
   return String(value ?? '').trim().toLowerCase()
+}
+
+function mapTallesToSizes(talles: unknown): string[] {
+  if (!Array.isArray(talles)) return []
+
+  const tallesCalzado = ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45'] as const
+  const tallesRopa = ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as const
+  const allowedTalles = [...tallesCalzado, ...tallesRopa] as const
+
+  const uniqueTalles = Array.from(
+    new Set(
+      talles
+        .map((talle) => String(talle).trim().toUpperCase())
+        .filter((talle) => allowedTalles.includes(talle as (typeof allowedTalles)[number])),
+    ),
+  )
+
+  return uniqueTalles.sort(
+    (a, b) => allowedTalles.indexOf(a as (typeof allowedTalles)[number]) - allowedTalles.indexOf(b as (typeof allowedTalles)[number]),
+  )
 }
 
 function getCategoryImage(name: string) {
@@ -146,7 +167,7 @@ export async function getCategories(): Promise<Category[]> {
     categoryImagesFromProducts.set(normalizedName, firstImage)
   })
 
-  return MAIN_CATEGORIES.map((name) => {
+  const categories: Category[] = MAIN_CATEGORIES.map((name) => {
       const imageFromProduct = categoryImagesFromProducts.get(normalizeText(name))
       return {
         name,
@@ -155,6 +176,8 @@ export async function getCategories(): Promise<Category[]> {
       }
     })
     .filter((category) => category.slug)
+
+  return categories
 }
 
 export const featuredProducts: Product[] = [
@@ -190,11 +213,8 @@ export function getProductBySlug(slug: string) {
 }
 
 export async function getCategoryBySlug(slug: string) {
-  return MAIN_CATEGORIES.map((name) => ({
-    name,
-    slug: slugifyCategory(name),
-    image: getCategoryImage(name),
-  })).find((category) => category.slug === slug)
+  const categories = await getCategories()
+  return categories.find((category) => category.slug === slug)
 }
 
 export async function getCollections() {
@@ -246,7 +266,7 @@ export async function getProductsByCategory(slug: string): Promise<Product[]> {
         name: product.nombre,
         priceCard: product.precio_tarjeta,
         priceCash: product.precio_efectivo,
-        sizes: product.talles ?? [],
+        sizes: mapTallesToSizes(product.talles),
         image: imagenes[0] ?? '',
         gallery: imagenes,
         description: product.descripcion ?? '',
@@ -282,7 +302,7 @@ export async function getProductsByCollection(slug: string): Promise<Product[]> 
         name: product.nombre,
         priceCard: product.precio_tarjeta,
         priceCash: product.precio_efectivo,
-        sizes: product.talles ?? [],
+        sizes: mapTallesToSizes(product.talles),
         image: imagenes[0] ?? '',
         gallery: imagenes,
         description: product.descripcion ?? '',

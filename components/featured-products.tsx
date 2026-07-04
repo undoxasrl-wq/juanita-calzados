@@ -1,6 +1,26 @@
 import { getProducts } from "@/lib/products";
 import { ProductCard } from "@/components/product-card";
 
+function mapTallesToSizes(talles: unknown): string[] {
+  if (!Array.isArray(talles)) return [];
+
+  const tallesCalzado = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"] as const;
+  const tallesRopa = ["XS", "S", "M", "L", "XL", "XXL"] as const;
+  const allowedTalles = [...tallesCalzado, ...tallesRopa] as const;
+
+  const uniqueTalles = Array.from(
+    new Set(
+      talles
+        .map((talle) => String(talle).trim().toUpperCase())
+        .filter((talle) => allowedTalles.includes(talle as (typeof allowedTalles)[number])),
+    ),
+  );
+
+  return uniqueTalles.sort(
+    (a, b) => allowedTalles.indexOf(a as (typeof allowedTalles)[number]) - allowedTalles.indexOf(b as (typeof allowedTalles)[number]),
+  );
+}
+
 export async function FeaturedProducts() {
   const products = await getProducts();
 
@@ -25,7 +45,7 @@ export async function FeaturedProducts() {
               priceCard: product.precio_tarjeta,
               priceCash: product.precio_efectivo,
               description: product.descripcion,
-              sizes: product.talles || [],
+              sizes: mapTallesToSizes(product.talles),
               category: product.categoria,
             }}
           />

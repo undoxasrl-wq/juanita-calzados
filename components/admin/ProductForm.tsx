@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { MAIN_CATEGORIES, SUBCATEGORIES_BY_CATEGORY } from "@/lib/data";
 
 type FormData = {
   nombre: string;
@@ -8,6 +9,7 @@ type FormData = {
   subcategoria: string;
   precioEfectivo: string;
   precioTarjeta: string;
+  tipoTalles: "calzado" | "ropa";
   talles: string[];
   descripcion: string;
   imagenes: File[];
@@ -19,18 +21,54 @@ type Props = {
   initialData?: any;
 };
 
+const TALLES_CALZADO = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"] as const;
+const TALLES_ROPA = ["XS", "S", "M", "L", "XL", "XXL"] as const;
+const TALLES_VALIDOS = [...TALLES_CALZADO, ...TALLES_ROPA] as const;
+const ORDEN_TALLES = [...TALLES_CALZADO, ...TALLES_ROPA] as const;
+
+function detectTipoTalles(talles: string[]): "calzado" | "ropa" {
+  const hasCalzado = talles.some((talle) => TALLES_CALZADO.includes(talle as (typeof TALLES_CALZADO)[number]));
+  const hasRopa = talles.some((talle) => TALLES_ROPA.includes(talle as (typeof TALLES_ROPA)[number]));
+
+  if (hasRopa && !hasCalzado) return "ropa";
+  return "calzado";
+}
+
+function normalizeTalles(value: unknown, tipoTalles?: "calzado" | "ropa"): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const allowedTalles: readonly string[] = tipoTalles === "ropa" ? TALLES_ROPA : tipoTalles === "calzado" ? TALLES_CALZADO : TALLES_VALIDOS;
+  const allowedTallesSet = new Set(allowedTalles);
+
+  const uniqueTalles = Array.from(
+    new Set(
+      value
+        .map((talle) => String(talle).trim().toUpperCase())
+        .filter((talle) => allowedTallesSet.has(talle)),
+    ),
+  );
+
+  return uniqueTalles.sort(
+    (a, b) => ORDEN_TALLES.indexOf(a as (typeof ORDEN_TALLES)[number]) - ORDEN_TALLES.indexOf(b as (typeof ORDEN_TALLES)[number]),
+  );
+}
+
 export default function ProductForm({ onSave, onCancel, initialData }: Props) {
   // Pre-cargar datos si es edición
-  const initializeFormData = () => {
+  const initializeFormData = (): FormData => {
     if (initialData) {
       const precio = initialData.precio.replace("$", "").replace(/,/g, "");
+      const tallesNormalizados = normalizeTalles(initialData.talles);
+      const tipoTalles = detectTipoTalles(tallesNormalizados);
+
       return {
         nombre: initialData.nombre,
         categoria: initialData.categoria,
         subcategoria: initialData.subcategoria ?? "",
         precioEfectivo: precio,
         precioTarjeta: precio,
-        talles: initialData.talles ?? [],
+        tipoTalles,
+        talles: normalizeTalles(tallesNormalizados, tipoTalles),
         descripcion: initialData.descripcion ?? "",
         imagenes: [],
       };
@@ -41,6 +79,7 @@ export default function ProductForm({ onSave, onCancel, initialData }: Props) {
       subcategoria: "",
       precioEfectivo: "",
       precioTarjeta: "",
+      tipoTalles: "calzado",
       talles: [],
       descripcion: "",
       imagenes: [],
@@ -57,19 +96,8 @@ export default function ProductForm({ onSave, onCancel, initialData }: Props) {
       setPreviewUrls([]);
     }
   }, [initialData]);
-  
-  const tallesDisponibles = ["XS", "S", "M", "L", "XL", "XXL"];
-  const categorias = ["Zapatos", "Botas", "Sandalias", "Zapatillas", "Accesorios", "Pantalones", "Vestidos", "Abrigos"];
-  const subcategoriesByCategory: Record<string, string[]> = {
-    Botas: ["Texanas", "Bucaneras", "Borcegos", "Western", "Flecos"],
-    Sandalias: ["Plataforma", "Chatitas", "Taco alto", "Taco bajo"],
-    Zapatillas: ["Urbanas", "Deportivas", "Casual"],
-    Vestidos: ["Cortos", "Largos", "Fiesta", "Casual"],
-    Pantalones: ["Jean", "Vestir", "Cargo", "Palazzo"],
-    Accesorios: ["Carteras", "Cintos", "Billeteras"],
-  };
 
-  const availableSubcategorias = subcategoriesByCategory[formData.categoria] ?? [];
+  const availableSubcategorias = SUBCATEGORIES_BY_CATEGORY[formData.categoria] ?? [];
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -82,12 +110,20 @@ export default function ProductForm({ onSave, onCancel, initialData }: Props) {
     }));
   };
 
+  const handleTipoTallesChange = (tipoTalles: "calzado" | "ropa") => {
+    setFormData((prev) => ({
+      ...prev,
+      tipoTalles,
+      talles: normalizeTalles(prev.talles, tipoTalles),
+    }));
+  };
+
   const handleTalleChange = (talle: string) => {
     setFormData((prev) => ({
       ...prev,
       talles: prev.talles.includes(talle)
         ? prev.talles.filter((t) => t !== talle)
-        : [...prev.talles, talle],
+        : normalizeTalles([...prev.talles, talle], prev.tipoTalles),
     }));
   };
 
@@ -125,6 +161,8 @@ export default function ProductForm({ onSave, onCancel, initialData }: Props) {
       alert("Producto guardado (ver consola para detalles)");
     }
   };
+
+  const tallesDisponibles = formData.tipoTalles === "ropa" ? TALLES_ROPA : TALLES_CALZADO;
 
   return (
     <div
@@ -199,7 +237,7 @@ export default function ProductForm({ onSave, onCancel, initialData }: Props) {
             }}
           >
             <option value="">Selecciona una categoría</option>
-            {categorias.map((cat) => (
+            {MAIN_CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>
                 {cat}
               </option>
@@ -323,12 +361,40 @@ export default function ProductForm({ onSave, onCancel, initialData }: Props) {
           <label
             style={{
               display: "block",
+              marginBottom: "8px",
+              fontWeight: "600",
+              color: "#333",
+            }}
+          >
+            Tipo de talles
+          </label>
+          <select
+            name="tipoTalles"
+            value={formData.tipoTalles}
+            onChange={(e) => handleTipoTallesChange(e.target.value as "calzado" | "ropa")}
+            style={{
+              width: "100%",
+              padding: "12px",
+              border: "1px solid #ddd",
+              borderRadius: "8px",
+              fontSize: "16px",
+              boxSizing: "border-box",
+              marginBottom: "12px",
+            }}
+          >
+            <option value="calzado">Calzado</option>
+            <option value="ropa">Ropa</option>
+          </select>
+
+          <label
+            style={{
+              display: "block",
               marginBottom: "12px",
               fontWeight: "600",
               color: "#333",
             }}
           >
-            Talles Disponibles
+            Talles
           </label>
           <div
             style={{

@@ -21,7 +21,7 @@ const dancingScript = Dancing_Script({
 export const metadata: Metadata = {
   title: 'Juanita Calzados | Calzado premium para mujer',
   description:
-    'Moda, comodidad y tendencia en cada paso. Botas, texanas, botinetas, borcegos, zapatillas y sandalias para mujer.',
+    'Moda, comodidad y tendencia en cada paso. Botas, sandalias, vestidos, pantalones, abrigos y sobres de fiesta para mujer.',
   generator: 'v0.app',
   icons: {
     icon: [

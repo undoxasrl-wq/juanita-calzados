@@ -6,6 +6,7 @@ import Header from '@/components/admin/Header'
 import Sidebar from '@/components/admin/Sidebar'
 import DashboardCard from '@/components/admin/DashboardCard'
 import ProductForm from '@/components/admin/ProductForm'
+import { MAIN_CATEGORIES } from '@/lib/data'
 import { supabase } from '@/lib/supabase'
 
 type AdminProduct = {
@@ -27,9 +28,33 @@ type FormData = {
   subcategoria: string
   precioEfectivo: string
   precioTarjeta: string
+  tipoTalles: 'calzado' | 'ropa'
   talles: string[]
   descripcion: string
   imagenes: File[]
+}
+
+const TALLES_CALZADO = ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45'] as const
+const TALLES_ROPA = ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as const
+const ORDEN_TALLES = [...TALLES_CALZADO, ...TALLES_ROPA] as const
+
+function normalizeTalles(value: unknown, tipoTalles?: 'calzado' | 'ropa'): string[] {
+  if (!Array.isArray(value)) return []
+
+  const allowedTalles: readonly string[] = tipoTalles === 'ropa' ? TALLES_ROPA : tipoTalles === 'calzado' ? TALLES_CALZADO : ORDEN_TALLES
+  const allowedTallesSet = new Set(allowedTalles)
+
+  const uniqueTalles = Array.from(
+    new Set(
+      value
+        .map((talle) => String(talle).trim().toUpperCase())
+        .filter((talle) => allowedTallesSet.has(talle)),
+    ),
+  )
+
+  return uniqueTalles.sort(
+    (a, b) => ORDEN_TALLES.indexOf(a as (typeof ORDEN_TALLES)[number]) - ORDEN_TALLES.indexOf(b as (typeof ORDEN_TALLES)[number]),
+  )
 }
 
 async function fileToDataUrl(file: File) {
@@ -43,20 +68,57 @@ async function fileToDataUrl(file: File) {
   })
 }
 
+function normalizeCounterValue(value: string | null | undefined) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function formatSupabaseError(error: { message?: string; details?: string | null; code?: string } | null) {
+  if (!error) return 'Error desconocido de Supabase'
+
+  const parts = [error.message, error.details, error.code ? `Código: ${error.code}` : null].filter(Boolean)
+  return parts.length > 0 ? parts.join(' | ') : 'Error desconocido de Supabase'
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [products, setProducts] = useState<AdminProduct[]>([])
   const [selectedProduct, setSelectedProduct] = useState<AdminProduct | null>(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-
-  const categoriesCount = useMemo(() => {
-    return new Set(products.map((product) => product.categoria?.trim().toLowerCase())).size
-  }, [products])
+  const [newOrdersCount, setNewOrdersCount] = useState(0)
 
   useEffect(() => {
-    checkSession()
+    void checkSession()
+
+    const channel = supabase
+      .channel('admin-products-dashboard')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'products',
+        },
+        () => {
+          void loadProducts()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
   }, [])
+
+  const dashboardStats = useMemo(() => {
+    const collections = new Set(products.map((product) => product.coleccion?.trim().toLowerCase()))
+
+    return {
+      products: products.length,
+      categories: MAIN_CATEGORIES.length,
+      collections: collections.size,
+    }
+  }, [products])
 
   async function checkSession() {
     const { data } = await supabase.auth.getSession()
@@ -64,7 +126,22 @@ export default function AdminPage() {
       router.replace('/login')
       return
     }
-    await loadProducts()
+    await Promise.all([loadProducts(), loadNewOrdersCount()])
+  }
+
+  async function loadNewOrdersCount() {
+    const { count, error } = await supabase
+      .from('pedidos')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_new', true)
+
+    if (error) {
+      console.error(error)
+      setNewOrdersCount(0)
+      return
+    }
+
+    setNewOrdersCount(count ?? 0)
   }
 
   async function loadProducts() {
@@ -79,7 +156,11 @@ export default function AdminPage() {
       setMessage('Error cargando productos')
       setProducts([])
     } else {
-      setProducts((data ?? []) as AdminProduct[])
+      const normalizedProducts = (data ?? []).map((product) => ({
+        ...(product as AdminProduct),
+        talles: normalizeTalles((product as AdminProduct).talles),
+      }))
+      setProducts(normalizedProducts as AdminProduct[])
       setMessage(null)
     }
     setLoading(false)
@@ -87,47 +168,63 @@ export default function AdminPage() {
 
   async function handleSave(formData: FormData) {
     setLoading(true)
-    const imagenes = formData.imagenes.length
-      ? await Promise.all(formData.imagenes.map((file) => fileToDataUrl(file)))
-      : selectedProduct?.imagenes ?? []
 
-    const payload = {
-      nombre: formData.nombre,
-      categoria: formData.categoria,
-      subcategoria: formData.subcategoria || null,
-      precio_efectivo: Number(formData.precioEfectivo),
-      precio_tarjeta: Number(formData.precioTarjeta),
-      talles: formData.talles,
-      descripcion: formData.descripcion,
-      imagenes,
-      coleccion: selectedProduct?.coleccion ?? null,
-    }
+    try {
+      const imagenes = formData.imagenes.length
+        ? await Promise.all(formData.imagenes.map((file) => fileToDataUrl(file)))
+        : selectedProduct?.imagenes ?? []
 
-    if (selectedProduct) {
-      const { error } = await supabase
-        .from('products')
-        .update(payload)
-        .eq('id', selectedProduct.id)
+      const basePayload = {
+        nombre: formData.nombre,
+        categoria: formData.categoria,
+        subcategoria: formData.subcategoria || null,
+        precio_efectivo: Number(formData.precioEfectivo),
+        precio_tarjeta: Number(formData.precioTarjeta),
+        talles: normalizeTalles(formData.talles, formData.tipoTalles),
+        descripcion: formData.descripcion,
+        imagenes,
+      }
 
-      if (error) {
-        console.error(error)
-        setMessage('Error al actualizar producto')
-      } else {
+      if (selectedProduct) {
+        const updatePayload = {
+          ...basePayload,
+          coleccion: selectedProduct?.coleccion ?? null,
+        }
+
+        const { error } = await supabase
+          .from('products')
+          .update(updatePayload)
+          .eq('id', selectedProduct.id)
+
+        if (error) {
+          console.error('Supabase update error:', error)
+          setMessage(`Error al actualizar producto: ${formatSupabaseError(error)}`)
+          return
+        }
+
         setMessage('Producto actualizado correctamente')
         setSelectedProduct(null)
-      }
-    } else {
-      const { error } = await supabase.from('products').insert([payload])
-      if (error) {
-        console.error(error)
-        setMessage('Error al crear producto')
       } else {
+        const { error } = await supabase.from('products').insert([basePayload])
+
+        if (error) {
+          console.error('Supabase insert error:', error)
+          setMessage(`Error al crear producto: ${formatSupabaseError(error)}`)
+          return
+        }
+
         setMessage('Producto creado correctamente')
       }
-    }
 
-    await loadProducts()
-    setLoading(false)
+      await loadProducts()
+    } catch (error) {
+      console.error('Unexpected product save error:', error)
+      setMessage(
+        `Error inesperado al guardar producto: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+      )
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleSignOut() {
@@ -151,11 +248,11 @@ export default function AdminPage() {
       console.error(error)
       setMessage('Error al eliminar producto')
     } else {
-      setProducts((prevProducts) => prevProducts.filter((product) => product.id !== productId))
       if (selectedProduct?.id === productId) {
         setSelectedProduct(null)
       }
       setMessage('Producto eliminado correctamente')
+      await loadProducts()
     }
     setLoading(false)
   }
@@ -169,12 +266,12 @@ export default function AdminPage() {
     <div className="min-h-screen bg-slate-50">
       <Header onSignOut={handleSignOut} />
       <div className="flex">
-        <Sidebar />
+        <Sidebar newOrdersCount={newOrdersCount} />
         <main className="flex-1 p-6">
           <div className="mb-6 grid gap-6 lg:grid-cols-3">
-            <DashboardCard titulo="Productos" valor={products.length} />
-            <DashboardCard titulo="Categorías" valor={categoriesCount} />
-            <DashboardCard titulo="Colecciones" valor={new Set(products.map((product) => product.coleccion?.trim().toLowerCase())).size} />
+            <DashboardCard titulo="Productos" valor={dashboardStats.products} />
+            <DashboardCard titulo="Categorías" valor={dashboardStats.categories} />
+            <DashboardCard titulo="Colecciones" valor={dashboardStats.collections} />
           </div>
           {message && (
             <div className="mb-4 rounded border border-slate-300 bg-white p-4 text-sm text-slate-700">
@@ -182,7 +279,7 @@ export default function AdminPage() {
             </div>
           )}
           <div className="grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
-            <section className="space-y-4">
+            <section id="productos" className="space-y-4">
               <div className="rounded-xl bg-white p-6 shadow-sm">
                 <h2 className="mb-4 text-xl font-semibold">Listado de productos</h2>
                 {loading ? (
