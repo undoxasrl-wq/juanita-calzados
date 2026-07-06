@@ -1,5 +1,6 @@
-import { getProducts } from "@/lib/products";
 import { ProductCard } from "@/components/product-card";
+import { supabase } from "@/lib/supabase";
+import { connection } from "next/server";
 
 function mapTallesToSizes(talles: unknown): string[] {
   if (!Array.isArray(talles)) return [];
@@ -22,7 +23,15 @@ function mapTallesToSizes(talles: unknown): string[] {
 }
 
 export async function FeaturedProducts() {
-  const products = await getProducts();
+  await connection();
+  const { data: products, error } = await supabase
+    .from("products")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error cargando productos destacados:", error);
+  }
 
   return (
     <section id="tienda" className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
@@ -33,7 +42,7 @@ export async function FeaturedProducts() {
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {products.map((product: any) => (
+        {(products ?? []).map((product: any) => (
           <ProductCard
             key={product.id}
             product={{
